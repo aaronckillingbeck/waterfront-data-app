@@ -10,65 +10,121 @@ assert os.getenv('DATABRICKS_WAREHOUSE_ID'), "DATABRICKS_WAREHOUSE_ID must be se
 # Databricks config
 cfg = Config()
 
-# Insert into the SQL warehouse with the user credentials
-def insert_data_with_user_token(name: str, category: str, cost: float, user_token: str):
-    """Execute an INSERT statement to append data to Unity Catalog."""
-    query = f"""INSERT INTO workspace.default.waterfront_mock_data (name, category, cost) VALUES ('{name}', '{category}', '{cost}')"""
+# Reusable Database Functions
+def run_insert(query: str, user_token: str):
+    """Execute an INSERT statement."""
     with sql.connect(
         server_hostname=cfg.host,
         http_path=f"/sql/1.0/warehouses/{cfg.warehouse_id}",
-        access_token=user_token  # Pass the user token into the SQL connect to insert on behalf of user
+        access_token=user_token
     ) as connection:
         with connection.cursor() as cursor:
             cursor.execute(query)
 
-# Query the SQL warehouse with the user credentials
-def fetch_recent_data_with_user_token(user_token: str) -> pd.DataFrame:
-    """Fetch the most recent table data to display in the app."""
-    query = "SELECT * FROM workspace.default.waterfront_mock_data ORDER BY id DESC LIMIT 50"
+def run_select(query: str, user_token: str) -> pd.DataFrame:
+    """Execute a SELECT statement and return a DataFrame."""
     with sql.connect(
         server_hostname=cfg.host,
         http_path=f"/sql/1.0/warehouses/{cfg.warehouse_id}",
-        access_token=user_token  # Pass the user token into the SQL connect to query on behalf of user
+        access_token=user_token
     ) as connection:
         with connection.cursor() as cursor:
             cursor.execute(query)
             return cursor.fetchall_arrow().to_pandas()
+        
+# Session State Initialization
+if 'page' not in st.session_state:
+    st.session_state.page = 'home'
+if 'region' not in st.session_state:
+    st.session_state.region = ''
+if 'installation' not in st.session_state:
+    st.session_state.installation = ''
 
-#UI setup
-st.set_page_config(layout="wide")
-st.title("Waterfront Data Entry")
+def navigate(page_name):
+    st.session_state.page = page_name
 
-# Extract user access token from the request headers
+def go_button_action(role, region, installation):
+    st.session_state.region = region
+    st.session_state.installation = installation
+    if role == "Role 1":
+        navigate('role1')
+    elif role == "Role 2":
+        navigate('role2')
+
+# Streamlit UI
+st.set_page_config(layout="wide", page_title="WPD Mockup")
 user_token = st.context.headers.get('X-Forwarded-Access-Token')
-col1, col2 = st.columns([1, 2])
 
-# In order to query with Service Principal credentials, comment the above line and uncomment the below line
-# data = sql_query_with_service_principal("SELECT * FROM samples.nyctaxi.trips LIMIT 5000")
-with col1:
-    st.subheader("Add New Name")
+# PAGE: HOME
+if st.session_state.page == 'home':
+    st.title("WPD Mockup")
+    
+    with st.container():
+        role_selection = st.selectbox("Select Role", ["Role 1", "Role 2"])
+        region_selection = st.selectbox("Select Region", ["Region 1", "Region 2"])
+        inst_selection = st.selectbox("Select Installation", ["Installation 1", "Installation 2"])
+        
+        st.button("GO", on_click=go_button_action, args=(role_selection, region_selection, inst_selection))
 
-    #UI Inputs
-    name = st.text_input("Requester Name")
-    category = st.selectbox("Category", ["Maintenance", "Cleaning", "Painting", "Fueling"])
-    cost = st.number_input("Cost", min_value=0.0, step=10.0)
+# PAGE: ROLE 1 (Platform Changes)
+elif st.session_state.page == 'role1':
+    st.button("← Back to Home", on_click=navigate, args=('home',))
+    st.title("Major Platform Change")
+    st.markdown(f"**Context:** {st.session_state.region} | {st.session_state.installation}")
 
-    # Submit Action
-    if st.button("Append Record"):
-        if name:
-            try:
-                insert_data_with_user_token(name, category, float(cost), user_token)
-                st.success(f"Successfully added {name}")
-            except Exception as e:
-                st.error(f"Failed to insert record. Error: {e}")
-        else:
-            st.error("Name is required")
-with col2:
-    st.subheader("Recent Records")
-    try:
-        data = fetch_recent_data_with_user_token(user_token)
-        st.dataframe(data=data, height=400, use_container_width=True)
-    except Exception as e:
-        st.info("No data found or table does not exist")
+    col1, col2 = st.columns([1, 2])
 
+    with col1:
+        with st.expander("New", expanded=True):
+            with st.form("platform_form", clear_on_submit=True):
+                platform = st.text_input("Platform/Class")
+                year = st.number_input("Change Year", min_value=2000, max_value=2100, step=1, value=2026)
+                pier = st.text_input("Pier")
+                
+                if st.form_submit_button("Save Entry"):
+                    if platform and pier:
+                        safe_plat = platform.replace("'", "''")
+                        safe_pier = pier.replace("'", "''")
+                        q = f"""INSERT INTO workspace.default.platform_changes_aaron 
+                                (region, installation, platform_class, change_year, pier) 
+                                VALUES ('{st.session_state.region}', '{st.session_state.installation}', '{safe_plat}', {year}, '{safe_pier}')"""
+                        run_insert(q, user_token)
+                        st.success("Entry Saved")
+                    else:
+                        st.error("Platform and Pier are required.")
+    with col2:
+        try:
+            df = run_select(f"SELECT platform_class, change_year, pier FROM workspace.default.platform_changes_aaron WHERE region='{st.session_state.region}' AND installation='{st.session_state.installation}' ORDER BY id DESC LIMIT 50", user_token)
+            st.dataframe(df, use_container_width=True, hide_index=True)
+        except Exception:
+            st.info("No records found for this location.")
+
+# PAGE: ROLE 2 (Pier Connections)
+elif st.session_state.page == 'role2':
+    st.button("← Back to Home", on_click=navigate, args=('home',))
+    st.title("Pier Connections")
+    st.markdown(f"**Context:** {st.session_state.region} | {st.session_state.installation}")
+    
+    col1, col2 = st.columns([1, 2])
+    
+    with col1:
+        with st.form("pier_network_form"):
+            st.subheader("Available Systems")
+            nipr = st.radio("NIPR Available?", ["Yes", "No"], horizontal=True)
+            sipr = st.radio("SIPR Available?", ["Yes", "No"], horizontal=True)
+            ncte = st.radio("NCTE Available?", ["Yes", "No"], horizontal=True)
+            cable = st.radio("Cable Available?", ["Yes", "No"], horizontal=True)
+            
+            if st.form_submit_button("Save Configuration"):
+                q = f"""INSERT INTO workspace.default.pier_connections_aaron 
+                        (region, installation, nipr, sipr, ncte, cable) 
+                        VALUES ('{st.session_state.region}', '{st.session_state.installation}', '{nipr}', '{sipr}', '{ncte}', '{cable}')"""
+                run_insert(q, user_token)
+                st.success("Configuration Saved")
+    with col2:
+        try:
+            df2 = run_select(f"SELECT nipr, sipr, ncte, cable FROM workspace.default.pier_connections_aaron WHERE region='{st.session_state.region}' AND installation='{st.session_state.installation}' ORDER BY id DESC LIMIT 50", user_token)
+            st.dataframe(df2, use_container_width=True, hide_index=True)
+        except Exception:
+            st.info("No network configurations logged for this location.")
 
