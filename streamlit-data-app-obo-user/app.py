@@ -49,20 +49,21 @@ st.set_page_config(layout="wide", page_title="WPD Mockup")
 user_token = st.context.headers.get('X-Forwarded-Access-Token')
 user_email = st.context.headers.get('X-Forwarded-Email', 'unknown@us.navy.mil')
 
+# Session State Initialization
 try:
     st.session_state.user_role = get_user_role(user_email, user_token)
 except Exception:
     st.session_state.user_role = 'Viewer'
-
 is_editor = (st.session_state.user_role == 'Editor')
 
-# Session State Initialization
 if 'page' not in st.session_state:
     st.session_state.page = 'home'
 if 'region' not in st.session_state:
     st.session_state.region = ''
 if 'installation' not in st.session_state:
     st.session_state.installation = ''
+if 'selected_role' not in st.session_state:
+    st.session_state.selected_role = ''
 if 'user_role' not in st.session_state:
     st.session_state.user_role = get_user_role(user_email, user_token)
 
@@ -72,16 +73,36 @@ def navigate(page_name):
 def go_button_action(role, region, installation):
     st.session_state.region = region
     st.session_state.installation = installation
+    st.session_state.selected_role = role
     if role == "Role 1":
         navigate('role1')
     elif role == "Role 2":
         navigate('role2')
 
 # Siderbar Role and Status
-st.sidebar.markdown(f"Logged in as:\n{user_email}")
-st.sidebar.markdown(f"Access level:\n{st.session_state.user_role}")
+st.sidebar.markdown(f"**User:**\n{user_email}")
+st.sidebar.markdown(f"**Access Level:\n{st.session_state.user_role}**")
 if not is_editor:
     st.sidebar.warning("You have Read-Only access. Contact an admin to request Editor access.")
+# Sidebar background color
+st.html(
+    """
+    <style>
+        div[data-baseweb="select"] > div, 
+        div[data-baseweb="input"] > div,
+        .stNumberInput input,
+        .stTextInput input {
+            border-width: 2px !important;  
+            border-style: solid !important;
+            border-color: #211a5b !important;
+        }
+        
+        [data-testid="stSidebar"] {
+            background-color: #f2b749 !important;
+        }
+    </style>
+    """
+)
 
 # PAGE: HOME
 if st.session_state.page == 'home':
@@ -92,24 +113,26 @@ if st.session_state.page == 'home':
         region_selection = st.selectbox("Select Region", ["Region 1", "Region 2"])
         inst_selection = st.selectbox("Select Installation", ["Installation 1", "Installation 2"])
         
-        st.button("GO", on_click=go_button_action, args=(role_selection, region_selection, inst_selection))
+        st.button("GO", on_click=go_button_action, args=(role_selection, region_selection, inst_selection), type="primary")
 
 # PAGE: ROLE 1 (Platform Changes)
 elif st.session_state.page == 'role1':
-    st.button("← Back to Home", on_click=navigate, args=('home',))
+    st.button("Back to Home", on_click=navigate, args=('home',), type="primary")
     st.title("Major Platform Change")
-    st.markdown(f"**Context:** {st.session_state.region} | {st.session_state.installation}")
+    st.sidebar.markdown(f"**Selected Region: {st.session_state.region}**")
+    st.sidebar.markdown(f"**Selected Installation: {st.session_state.installation}**")
+    st.sidebar.markdown(f"**Selected Role: {st.session_state.selected_role}**")
 
     col1, col2 = st.columns([1, 2])
 
     with col1:
-        with st.expander("New", expanded=True):
+        with st.header(""):
             with st.form("platform_form", clear_on_submit=True):
                 platform = st.text_input("Platform/Class", disabled=not is_editor)
                 year = st.number_input("Change Year", min_value=2000, max_value=2100, step=1, value=2026, disabled=not is_editor)
                 pier = st.text_input("Pier", disabled=not is_editor)
                 
-                if st.form_submit_button("Save Entry", disabled=not is_editor):
+                if st.form_submit_button("Save Entry", disabled=not is_editor, type="primary"):
                     if platform and pier and is_editor:
                         safe_plat = platform.replace("'", "''")
                         safe_pier = pier.replace("'", "''")
@@ -123,27 +146,33 @@ elif st.session_state.page == 'role1':
     with col2:
         try:
             df = run_select(f"SELECT platform_class, change_year, pier FROM workspace.default.platform_changes_aaron WHERE region='{st.session_state.region}' AND installation='{st.session_state.installation}' ORDER BY id DESC LIMIT 50", user_token)
-            st.dataframe(df, use_container_width=True, hide_index=True)
+            st.dataframe(df, use_container_width=True, hide_index=True, column_config={
+                "platform_class": "Platform/Class",
+                "change_year": "Change Year",
+                "pier": "Pier"
+            })
         except Exception:
             st.info("No records found for this location.")
 
 # PAGE: ROLE 2 (Pier Connections)
 elif st.session_state.page == 'role2':
-    st.button("← Back to Home", on_click=navigate, args=('home',))
+    st.button("Back to Home", on_click=navigate, args=('home',), type="primary")
     st.title("Pier Connections")
-    st.markdown(f"**Context:** {st.session_state.region} | {st.session_state.installation}")
+    st.sidebar.markdown(f"**Selected Region: {st.session_state.region}**")
+    st.sidebar.markdown(f"**Selected Installation: {st.session_state.installation}**")
+    st.sidebar.markdown(f"**Selected Role: {st.session_state.selected_role}**")
     
     col1, col2 = st.columns([1, 2])
     
     with col1:
         with st.form("pier_network_form"):
-            st.subheader("Available Systems")
-            nipr = st.radio("NIPR Available?", ["Yes", "No"], horizontal=True, disabled=not is_editor)
-            sipr = st.radio("SIPR Available?", ["Yes", "No"], horizontal=True, disabled=not is_editor)
-            ncte = st.radio("NCTE Available?", ["Yes", "No"], horizontal=True, disabled=not is_editor)
-            cable = st.radio("Cable Available?", ["Yes", "No"], horizontal=True, disabled=not is_editor)
+            st.header("Available Systems")
+            nipr = st.radio(":red[*] NIPR", ["Yes", "No"], horizontal=True, disabled=not is_editor)
+            sipr = st.radio(":red[*] SIPR", ["Yes", "No"], horizontal=True, disabled=not is_editor)
+            ncte = st.radio(":red[*] NCTE", ["Yes", "No"], horizontal=True, disabled=not is_editor)
+            cable = st.radio(":red[*] Cable", ["Yes", "No"], horizontal=True, disabled=not is_editor)
             
-            if st.form_submit_button("Save Configuration", disabled=not is_editor):
+            if st.form_submit_button("Save Configuration", disabled=not is_editor, type="primary"):
                 if is_editor:
                     q = f"""INSERT INTO workspace.default.pier_connections_aaron 
                             (region, installation, nipr, sipr, ncte, cable) 
@@ -153,7 +182,12 @@ elif st.session_state.page == 'role2':
     with col2:
         try:
             df2 = run_select(f"SELECT nipr, sipr, ncte, cable FROM workspace.default.pier_connections_aaron WHERE region='{st.session_state.region}' AND installation='{st.session_state.installation}' ORDER BY id DESC LIMIT 50", user_token)
-            st.dataframe(df2, use_container_width=True, hide_index=True)
+            st.dataframe(df2, use_container_width=True, hide_index=True, column_config={
+                "nipr": "NIPR",
+                "sipr": "SIPR",
+                "ncte": "NCTE",
+                "cable": "Cable"
+            })
         except Exception:
             st.info("No network configurations logged for this location.")
 
