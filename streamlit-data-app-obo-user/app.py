@@ -74,9 +74,9 @@ def go_button_action(role, region, installation):
     st.session_state.region = region
     st.session_state.installation = installation
     st.session_state.selected_role = role
-    if role == "Role 1":
+    if role == "IPI/IED (SLD)":
         navigate('role1')
-    elif role == "Role 2":
+    elif role == "N6":
         navigate('role2')
 
 # Siderbar Role and Status
@@ -109,13 +109,13 @@ if st.session_state.page == 'home':
     st.title("WPD Mockup")
     
     with st.container():
-        role_selection = st.selectbox("Select Role", ["Role 1", "Role 2"])
+        role_selection = st.selectbox("Select Role", ["IPI/IED (SLD)", "N6"])
         region_selection = st.selectbox("Select Region", ["Region 1", "Region 2"])
         inst_selection = st.selectbox("Select Installation", ["Installation 1", "Installation 2"])
         
         st.button("GO", on_click=go_button_action, args=(role_selection, region_selection, inst_selection), type="primary")
 
-# PAGE: ROLE 1 (Platform Changes)
+# PAGE: IPI/IED (SLD) (Platform Changes)
 elif st.session_state.page == 'role1':
     st.button("Back to Home", on_click=navigate, args=('home',), type="primary")
     st.title("Major Platform Change")
@@ -148,13 +148,16 @@ elif st.session_state.page == 'role1':
             df = run_select(f"SELECT platform_class, change_year, pier FROM workspace.default.platform_changes_aaron WHERE region='{st.session_state.region}' AND installation='{st.session_state.installation}' ORDER BY id DESC LIMIT 50", user_token)
             st.dataframe(df, use_container_width=True, hide_index=True, column_config={
                 "platform_class": "Platform/Class",
-                "change_year": "Change Year",
+                "change_year": st.column_config.NumberColumn(
+                    "Change Year",
+                    format="%d"
+                ),
                 "pier": "Pier"
             })
         except Exception:
             st.info("No records found for this location.")
 
-# PAGE: ROLE 2 (Pier Connections)
+# PAGE: N6 (Pier Connections)
 elif st.session_state.page == 'role2':
     st.button("Back to Home", on_click=navigate, args=('home',), type="primary")
     st.title("Pier Connections")
